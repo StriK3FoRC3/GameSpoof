@@ -1,4 +1,11 @@
-﻿# GameSpoof
+ # GameSpoof
+<div align="center">
+    <img src="/Screenshot1.png" width="500px"</img> 
+</div>
+
+a simple program to spoof playing games on discord. with playlist functionality.
+
+Search Discord’s game catalogue, add games to your library, and create playlists with custom playtimes. Includes shuffle, repeat, random durations, pauses between games, background mode, and game list import/export.
 
 Run `GameSpoof\GameSpoof.exe`. Keep the runtime folder together in a writable location. The app stores its library, playlist, window-size settings, and cached game files there.
 
