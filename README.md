@@ -1,4 +1,4 @@
- # GameSpoof
+ # GameSpoof for Discord
 <div align="center">
     <img src="/Screenshot1.png" width="1000px"</img> 
 </div>
