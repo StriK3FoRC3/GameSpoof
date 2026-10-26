@@ -1,6 +1,6 @@
  # GameSpoof
 <div align="center">
-    <img src="/Screenshot1.png" width="500px"</img> 
+    <img src="/Screenshot1.png" width="1000px"</img> 
 </div>
 
 a simple program to spoof playing games on discord. with playlist functionality.
