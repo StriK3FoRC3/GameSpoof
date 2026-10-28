@@ -5,41 +5,7 @@
     <img src="/Screenshot1.png" width="1000px"</img> 
 </div>
 ⚠️Disclaimer⚠️: This app was created with the help of ChatGPT/Codex. If you don't like vibe coded programs, don't use it. Please report any bugs you find, and feel free to suggest new features.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+---------------------------------------------------------
 a simple program to spoof playing games on discord. with playlist functionality.
 
 Search Discord’s game catalogue, add games to your library, and create playlists with custom playtimes. Includes shuffle, repeat, random durations, pauses between games, background mode, and game list import/export.
