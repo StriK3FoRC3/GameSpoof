@@ -8,6 +8,8 @@
 
 
 ‎ 
+‎ 
+‎ 
 a simple program to spoof playing games on discord. with playlist functionality.
 
 Search Discord’s game catalogue, add games to your library, and create playlists with custom playtimes. Includes shuffle, repeat, random durations, pauses between games, background mode, and game list import/export.
