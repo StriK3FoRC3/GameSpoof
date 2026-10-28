@@ -1,3 +1,5 @@
+⚠️Disclaimer⚠️: This app was created with the help of ChatGPT/Codex. If you don't like vibe coded programs, don't use it. Please report any bugs you find, and feel free to suggest new features.
+
  # GameSpoof for Discord
 <div align="center">
     <img src="/Screenshot1.png" width="1000px"</img> 
