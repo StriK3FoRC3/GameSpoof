@@ -27,6 +27,10 @@ The first launch with no cache downloads it automatically. Older caches that exc
 
 ## Library
 
+A green **Playing** indicator beside Stop shows when a game process is running, with elapsed time counting up next to it. This keeps counting when the optional countdown is disabled, resets for each new game, and hides during playlist pauses or after Stop.
+
+The sort dropdown beside Library search orders games by name (A–Z or Z–A) or date added to your library (newest or oldest). Sorting keeps your selected games selected and also applies to search results.
+
 Select a game and click **Play now**. The small switch beside the duration enables the manual countdown; it defaults off on a fresh installation. The countdown and Play in background switches are remembered in `app-settings.xml` across restarts. With the timer off, the game keeps running until stopped. Turning the timer off during manual playback pauses its remaining time.
 
 Duration inputs accept a number followed by **s**, **m**, or **h**: `30s`, `5m`, `2h`. Bare numbers automatically gain an **m** suffix while typing; entering **s** or **h** replaces that automatic suffix. Press **Enter** to apply a valid value: update selected playlist entries, save timing ranges, or set the Library duration (including the total duration of an active manual timer). Durations support one second through seven days. Invalid input turns red and cannot start playback or be applied with Enter.
@@ -49,6 +53,12 @@ The range row above the editing buttons has two options:
 The ranges use the same `s`/`m`/`h` inputs. Minimum must not exceed maximum. Playlist entries, durations, Repeat, and range options save in `playlist.xml`. Timing changes apply the next time a playlist starts. Existing duplicate entries in older playlists are collapsed on load/import, keeping the first entry.
 
 ## Add games
+
+Opening **Add games** displays the first 10 matching games with **Playable only** enabled. Scroll to **Show all**, inside the list after the tenth game, to load the remaining matches while preserving filters, sorting, game selection and scroll position. The button is hidden when there are 10 or fewer matches. Changing search, sorting or filters, or reopening the tab, returns to the 10-game preview for faster display.
+
+The **Playable only** toggle hides catalogue games without a supported Windows executable. It combines with the search and **New since last refresh** filters. Turn it off to restore unavailable entries.
+
+Click **All games**, beside **Refresh Game Catalogue**, to browse the downloaded catalogue offline. Sort by first-seen date (newest or oldest) or name. **New since last refresh** shows the latest batch of newly discovered games, marked **NEW**. Refreshing without discovering additions keeps that batch, including across restarts. The batch is replaced only when a successful refresh discovers new games. Dates mean when this app first saw a game, not its release date or the date Discord originally added it. The first download establishes a baseline; additions are tracked from subsequent refreshes. Failed refreshes retain the saved catalogue and new-game markers. Browsing never adds games to your Library automatically.
 
 Enter a title, or several comma-separated titles. Results update automatically as you type using the saved catalog. **Refresh Game Catalogue** beside the field downloads updates. The app downloads the catalog automatically on first launch if no cache exists; if that fails, the refresh button retries it. Select matches and click **Add selected games** to save them to Library. Existing games are skipped; removed entries can be restored. Games with no supported Windows executable cannot be added. Such rows remain visible in search so their unavailable status is clear.
 
@@ -80,7 +90,7 @@ GameSpoof is an unofficial project and is not affiliated with Discord or Steam.
 
 ## Project and development
 
-Create a portable release with `powershell -ExecutionPolicy Bypass -File .\release.ps1 -Version 1.0.0`. Release packaging includes only the executable and README. Local libraries, playlists, settings, imports, generated game files, and test output are excluded from both Git and the release ZIP.
+Create a portable release with `powershell -ExecutionPolicy Bypass -File .\release.ps1 -Version 1.1.0`. Release packaging includes only the executable, README and changelog. Local libraries, playlists, settings, imports, generated game files, and test output are excluded from both Git and the release ZIP.
 
 - `GameSpoof/`: portable runtime, library, saved playlist, and generated window-size settings.
 - `src/`: application source, cached catalog storage, and custom controls.
