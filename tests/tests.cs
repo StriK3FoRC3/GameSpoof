@@ -183,7 +183,7 @@ static class Tests
                 Check(games.Items.Count == 3 && games.Items.Cast<PlaylistItem>().All(x => x.Path.Length > 0), "imports cannot add unsupported library games");
                 var remote = new[] { new DetectionCatalog.Entry { name = "Unsupported catalog title", executables = new DetectionCatalog.Executable[0] } };
                 form.GetType().GetField("remoteCatalog", Flags).SetValue(form, remote);
-                ((TextBox)Field(form, "catalogSearch")).Text = "Unsupported";
+                Toggle(form, "playableCatalogOnly", false); ((TextBox)Field(form, "catalogSearch")).Text = "Unsupported";
                 var found = (ListBox)Field(form, "catalogResults"); found.SetSelected(0, true);
                 Check(!((Button)Field(form, "addGamesButton")).Enabled, "unsupported-only selection disables add button");
                 Call(form, "AddCatalogGames"); Check(games.Items.Count == 3, "unsupported catalog results cannot be added programmatically");
@@ -191,9 +191,13 @@ static class Tests
                 Toggle(form, "backgroundMode", true); Call(form, "PlayNow", crab);
                 Check(Until(() => Field(form, "active") != null && GameWindow((Process)Field(form, "active"), false), 3000), "background launch keeps game window visible to Windows but off every screen");
                 var worker = (Process)Field(form, "active");
+                var playingIndicator = (Control)Field(form, "playingIndicator");
+                Check(playingIndicator.Visible && Until(() => playingIndicator.Text != "00:00:00", 1500) && !((CheckBox)Field(form, "timerEnabled")).Checked, "green playing indicator counts elapsed time with the countdown disabled");
+                Render(form, "playing-status.png");
                 Toggle(form, "backgroundMode", false); Check(Until(() => GameWindow(worker, true), 1500), "background switch can reveal running game window");
                 Toggle(form, "backgroundMode", true); Check(Until(() => GameWindow(worker, false), 1500), "background switch moves running window off-screen without hiding it");
                 Call(form, "StopAll", "Stopped"); string crabTarget = PlaceholderPaths.Resolve(root, crab.Path);
+                Check(!playingIndicator.Visible && playingIndicator.Text == "00:00:00", "Stop hides the playing indicator and resets elapsed time");
                 Check(File.Exists(crabTarget), "generated executable retained after Stop within session");
                 DateTime stamp = File.GetLastWriteTimeUtc(crabTarget); Call(form, "PlayNow", crab); Call(form, "StopAll", "Stopped");
                 Check(File.GetLastWriteTimeUtc(crabTarget) == stamp, "restarting same game reuses cached executable");
@@ -204,6 +208,7 @@ static class Tests
                 Toggle(form, "timerEnabled", true); Toggle(form, "timerEnabled", false);
                 Check(Until(() => (bool)Field(form, "inPause"), 3500), "playlist timer advances into random pause with Library timer off");
                 Check(Field(form, "active") == null && ((Label)Field(form, "remaining")).Text.Contains("pause"), "pause has no game process and shows countdown");
+                Check(!playingIndicator.Visible, "playlist pauses do not show a green playing indicator");
                 Render(form, "playlist-pause.png");
                 Check(Until(() => !(bool)Field(form, "inPause") && Field(form, "active") != null, 2500), "next game launches after pause");
                 Check(((PlaylistRun)Field(form, "run")).Index == 1, "pause resumes correct next entry");
