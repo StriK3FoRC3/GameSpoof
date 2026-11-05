@@ -50,7 +50,28 @@ sealed class Card : Panel
     }
 }
 
-sealed class ActionButton : Button
+sealed class PlaybackStatus : Control
+{
+    public PlaybackStatus()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        AccessibleName = "Playing status and elapsed time"; AccessibleRole = AccessibleRole.StaticText; TabStop = false;
+    }
+    protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(Parent == null ? Theme.Panel : Parent.BackColor);
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        float y = (Height - 28) / 2f;
+        using (var path = Theme.Round(new RectangleF(.5f, y + .5f, 79, 27), 7))
+        using (var fill = new SolidBrush(Color.FromArgb(24, 62, 44)))
+        using (var pen = new Pen(Color.FromArgb(42, 105, 68))) { e.Graphics.FillPath(fill, path); e.Graphics.DrawPath(pen, path); }
+        TextRenderer.DrawText(e.Graphics, "Playing", Font, new Rectangle(0, (int)y, 80, 28), Color.FromArgb(111, 230, 157), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+        TextRenderer.DrawText(e.Graphics, Text, Font, new Rectangle(84, 0, Math.Max(0, Width - 84), Height), Theme.Text, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+    }
+}
+
+class ActionButton : Button
 {
     public bool Primary { get; set; }
     public bool Danger { get; set; }
@@ -92,7 +113,7 @@ sealed class ActionButton : Button
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var list = Parent as DarkList;
-        e.Graphics.Clear(list == null ? (Parent == null ? Theme.Background : Parent.BackColor) : list.RowBackColor(list.HoveredIndex));
+        e.Graphics.Clear(list == null ? (Parent == null ? Theme.Background : Parent.BackColor) : list.RowBackColor(list.ButtonRowIndex(this)));
         Color fill = Primary && Enabled ? Theme.Accent : (Selected ? Color.FromArgb(53, 47, 79) : Theme.Input);
         if (Enabled && hoverLevel > 0) {
             Color highlight = Danger ? Color.FromArgb(175, 48, 62) : ControlPaint.Light(fill, .12f);
@@ -135,6 +156,93 @@ sealed class ActionButton : Button
     }
 }
 
+sealed class DarkDropdown : ActionButton
+{
+    public readonly List<object> Items = new List<object>();
+    readonly ContextMenuStrip menu = new ContextMenuStrip();
+    int selectedIndex = -1;
+    public event EventHandler SelectedIndexChanged;
+    public int SelectedIndex
+    {
+        get { return selectedIndex; }
+        set {
+            if (value < -1 || value >= Items.Count) throw new ArgumentOutOfRangeException("value");
+            if (selectedIndex == value) return;
+            selectedIndex = value; AccessibleDescription = value < 0 ? "" : Items[value].ToString(); Invalidate();
+            if (SelectedIndexChanged != null) SelectedIndexChanged(this, EventArgs.Empty);
+        }
+    }
+    public DarkDropdown()
+    {
+        Cursor = Cursors.Hand; Margin = new Padding(0, 2, 5, 2);
+        menu.BackColor = Theme.Input; menu.ForeColor = Theme.Text; menu.Padding = new Padding(4);
+        menu.Renderer = new DropdownRenderer();
+        menu.Closed += delegate { Selected = false; Invalidate(); };
+        menu.SizeChanged += delegate {
+            using (var shape = Theme.Round(new RectangleF(0, 0, menu.Width, menu.Height), 8)) {
+                var old = menu.Region; menu.Region = new Region(shape); if (old != null) old.Dispose();
+            }
+        };
+    }
+    protected override void OnClick(EventArgs e)
+    {
+        base.OnClick(e);
+        if (menu.Visible) { menu.Close(); return; }
+        while (menu.Items.Count > 0) { var item = menu.Items[0]; menu.Items.RemoveAt(0); item.Dispose(); }
+        menu.Font = Font;
+        for (int i = 0; i < Items.Count; i++) {
+            int index = i;
+            var item = new ToolStripMenuItem(Items[i].ToString()) { Checked = i == selectedIndex, ForeColor = Theme.Text, AutoSize = false, Size = new Size(Math.Max(190, Width - 10), 32) };
+            item.Click += delegate { SelectedIndex = index; };
+            menu.Items.Add(item);
+        }
+        Selected = true; Invalidate(); menu.Show(this, new Point(0, Height + 4));
+    }
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Down || e.KeyCode == Keys.Up || e.KeyCode == Keys.F4) {
+            OnClick(EventArgs.Empty); e.Handled = e.SuppressKeyPress = true;
+        }
+        base.OnKeyDown(e);
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        string label = selectedIndex < 0 ? "Select order" : Items[selectedIndex].ToString();
+        TextRenderer.DrawText(e.Graphics, label, Font, new Rectangle(11, 0, Math.Max(0, Width - 39), Height), Enabled ? Theme.Text : Theme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        using (var pen = new Pen(Theme.Muted, 1.5f)) {
+            float x = Width - 18, y = Height / 2f;
+            e.Graphics.DrawLines(pen, Selected ? new[] { new PointF(x - 4, y + 2), new PointF(x, y - 2), new PointF(x + 4, y + 2) } : new[] { new PointF(x - 4, y - 2), new PointF(x, y + 2), new PointF(x + 4, y - 2) });
+        }
+    }
+    protected override void Dispose(bool disposing) { if (disposing) menu.Dispose(); base.Dispose(disposing); }
+    sealed class DropdownRenderer : ToolStripProfessionalRenderer
+    {
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) { e.Graphics.Clear(Theme.Input); }
+        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e) { }
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var path = Theme.Round(new RectangleF(.5f, .5f, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1), 8))
+            using (var pen = new Pen(Theme.Border)) e.Graphics.DrawPath(pen, path);
+        }
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var path = Theme.Round(new RectangleF(0, 0, e.Item.Width, e.Item.Height), 6))
+            using (var fill = new SolidBrush(Color.FromArgb(53, 47, 79))) e.Graphics.FillPath(fill, path);
+        }
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e) { e.TextColor = Theme.Text; base.OnRenderItemText(e); }
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float x = e.ImageRectangle.Left + 2, y = e.ImageRectangle.Top + e.ImageRectangle.Height / 2f;
+            using (var pen = new Pen(Theme.Accent, 2)) e.Graphics.DrawLines(pen, new[] { new PointF(x, y), new PointF(x + 3, y + 3), new PointF(x + 9, y - 4) });
+        }
+    }
+}
+
 // Native ListBox windows cannot use WS_EX_COMPOSITED directly. Apply it to
 // their host so the list and its hover buttons are presented in one frame.
 sealed class BufferedListPanel : Panel
@@ -160,6 +268,26 @@ sealed class DarkList : ListBox
     public event Action<int> RowInfo;
     public Func<int, bool> HasRowInfo { get; set; }
     public bool RowActions { get; set; }
+    Button scrollFooter;
+    public int ButtonRowIndex(Control button) { return button == scrollFooter ? Items.IndexOf(scrollFooter) : hovered; }
+    public void SetScrollFooter(Button button, bool show)
+    {
+        scrollFooter = button;
+        if (button.Parent != this) Controls.Add(button);
+        if (show && !Items.Contains(button)) Items.Add(button);
+        if (!show && Items.Contains(button)) Items.Remove(button);
+        PositionScrollFooter();
+    }
+    void PositionScrollFooter()
+    {
+        if (scrollFooter == null) return;
+        int index = Items.IndexOf(scrollFooter);
+        if (index < 0 || !IsHandleCreated) { scrollFooter.Visible = false; return; }
+        var row = GetItemRectangle(index);
+        scrollFooter.SetBounds(6, row.Top + 6, Math.Max(1, ClientSize.Width - 12), Math.Max(1, row.Height - 12));
+        scrollFooter.Visible = ClientRectangle.IntersectsWith(scrollFooter.Bounds);
+        if (scrollFooter.Visible) scrollFooter.BringToFront();
+    }
     bool selectingAll;
     readonly ActionButton add = new ActionButton { PlaylistIcon = true, AccessibleName = "Add selected games to playlist", Cursor = Cursors.Hand };
     readonly ActionButton remove = new ActionButton { TrashIcon = true, Danger = true, AccessibleName = "Remove selected games", Cursor = Cursors.Hand };
@@ -193,7 +321,7 @@ sealed class DarkList : ListBox
     public void SelectAllItems()
     {
         BeginUpdate(); selectingAll = true;
-        try { for (int i = 0; i < Items.Count; i++) SetSelected(i, true); }
+        try { for (int i = 0; i < Items.Count; i++) SetSelected(i, !ReferenceEquals(Items[i], scrollFooter)); }
         finally { selectingAll = false; EndUpdate(); OnSelectedIndexChanged(EventArgs.Empty); }
     }
     public DarkList()
@@ -234,6 +362,9 @@ sealed class DarkList : ListBox
     }
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (scrollFooter != null && ReferenceEquals(SelectedItem, scrollFooter) && (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space)) {
+            scrollFooter.PerformClick(); e.Handled = e.SuppressKeyPress = true; return;
+        }
         if (e.KeyCode == Keys.F1 && HasInfo(SelectedIndex) && RowInfo != null) { RowInfo(SelectedIndex); e.Handled = e.SuppressKeyPress = true; }
         base.OnKeyDown(e);
     }
@@ -277,7 +408,12 @@ sealed class DarkList : ListBox
     public void HideActions() { SetHovered(-1); add.Visible = remove.Visible = false; }
     public void ResetHover() { hovered = -1; hoverLevels.Clear(); hoverAnimation.Stop(); add.Visible = remove.Visible = false; Invalidate(); }
     protected override void Dispose(bool disposing) { if (disposing) hoverAnimation.Dispose(); base.Dispose(disposing); }
-    protected override void WndProc(ref Message m) { if (m.Msg == 0x115 || m.Msg == 0x20A || m.Msg == 5) ResetHover(); base.WndProc(ref m); }
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x115 || m.Msg == 0x20A || m.Msg == 5) ResetHover();
+        base.WndProc(ref m);
+        if (m.Msg == 0x115 || m.Msg == 0x20A || m.Msg == 5 || m.Msg == 0xF) PositionScrollFooter();
+    }
 }
 
 sealed class DarkInformationDialog : Form

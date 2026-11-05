@@ -74,6 +74,12 @@ public static class DetectionCatalog
         return entries.Where(HasValidName).Select(ToPlaylistItem)
             .Where(x => !string.IsNullOrEmpty(x.Path)).GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
+    public static PlaylistItem[] AllEntries(Entry[] entries)
+    {
+        return entries.Where(HasValidName).Select(ToPlaylistItem)
+            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderBy(x => string.IsNullOrEmpty(x.Path)).First())
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
     static bool HasValidName(Entry entry)
     { return entry != null && !string.IsNullOrWhiteSpace(entry.name) && !entry.name.Contains('"') && !entry.name.Any(char.IsControl); }
     static PlaylistItem ToPlaylistItem(Entry entry)

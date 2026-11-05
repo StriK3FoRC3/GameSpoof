@@ -14,6 +14,7 @@ public sealed class CatalogLibrary
         public int Version { get; set; }
         public string UpdatedUtc { get; set; }
         public DetectionCatalog.Entry[] Entries { get; set; }
+        public List<string> NewEntryKeys { get; set; }
     }
     public sealed class Preferences
     {
@@ -26,6 +27,10 @@ public sealed class CatalogLibrary
     Dictionary<string, DetectionCatalog.Entry> byTitle = new Dictionary<string, DetectionCatalog.Entry>(StringComparer.Ordinal);
     Dictionary<string, DetectionCatalog.Entry> byName = new Dictionary<string, DetectionCatalog.Entry>(StringComparer.OrdinalIgnoreCase);
     HashSet<string> hidden;
+    HashSet<string> newEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public bool IsNew(PlaylistItem item) { return newEntries.Contains(Key(item)); }
+    public int NewCount { get { return newEntries.Count; } }
+    public int LastRefreshNewCount { get; private set; }
     public string LoadError { get; private set; }
     public bool HasCache { get { return snapshot != null; } }
     public bool NeedsRefresh { get { return snapshot == null || snapshot.Version < 2; } }
@@ -94,21 +99,24 @@ public sealed class CatalogLibrary
     public void ApplySnapshot(DetectionCatalog.Entry[] downloaded, DateTime updatedUtc)
     {
         var valid = new List<DetectionCatalog.Entry>();
+        var additions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in downloaded ?? new DetectionCatalog.Entry[0]) {
             if (entry == null || string.IsNullOrWhiteSpace(entry.name) || entry.name.Contains('"') || entry.name.Any(char.IsControl)) continue;
             string path = DetectionCatalog.WindowsPath(entry);
             DetectionCatalog.Entry old; string added = updatedUtc.ToLocalTime().ToString("yyyy-MM-dd");
             if ((!string.IsNullOrEmpty(entry.id) && byId.TryGetValue(entry.id, out old)) || byName.TryGetValue(entry.name, out old)) added = old.added_on ?? added;
+            else if (snapshot != null) additions.Add(Key(new PlaylistItem { CatalogId = entry.id, Name = entry.name }));
             valid.Add(new DetectionCatalog.Entry { id = entry.id, name = entry.name, aliases = entry.aliases, added_on = added, executables = path.Length == 0 ? new DetectionCatalog.Executable[0] : new[] { new DetectionCatalog.Executable { os = "win32", name = path } } });
         }
         if (!valid.Any(x => x.executables.Length > 0)) throw new FormatException("The downloaded catalog contains no supported Windows games. Saved catalog retained.");
-        var next = new Snapshot { Version = 2, Entries = valid.ToArray(), UpdatedUtc = updatedUtc.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture) };
+        var next = new Snapshot { Version = 2, Entries = valid.ToArray(), NewEntryKeys = additions.Count > 0 ? additions.ToList() : newEntries.ToList(), UpdatedUtc = updatedUtc.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture) };
         // Only publish a new snapshot after its complete file has been saved successfully.
         WriteJson(Path.Combine(root, "catalog-cache.json"), next);
-        snapshot = next; Reindex();
+        snapshot = next; Reindex(); LastRefreshNewCount = additions.Count;
     }
     void Reindex()
     {
+        newEntries = new HashSet<string>(snapshot.NewEntryKeys ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
         var ids = new Dictionary<string, DetectionCatalog.Entry>(StringComparer.OrdinalIgnoreCase);
         var names = new Dictionary<string, DetectionCatalog.Entry>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in Entries.Where(x => x != null && !string.IsNullOrEmpty(x.name))) {

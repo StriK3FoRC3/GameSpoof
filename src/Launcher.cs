@@ -16,6 +16,11 @@ sealed class Launcher : Form
     readonly CatalogLibrary libraryStore;
     readonly Button refreshButton;
     readonly Label lastUpdated = new Label();
+    readonly Button browseCatalogButton;
+    readonly DarkDropdown catalogSort = new DarkDropdown();
+    readonly DarkDropdown librarySort = new DarkDropdown();
+    readonly CheckBox newCatalogOnly = new RepeatSwitch();
+    readonly CheckBox playableCatalogOnly = new RepeatSwitch();
     readonly List<PlaylistItem> playlist = new List<PlaylistItem>();
     readonly ListBox games = new DarkList(), queue = new DarkList();
     readonly TextBox search = new TextBox(), catalogSearch = new TextBox();
@@ -23,6 +28,9 @@ sealed class Launcher : Form
     readonly Label catalogInfo = new Label();
     readonly Button addGamesButton;
     readonly Button addAllPlaylistButton;
+    readonly Button showAllCatalogButton;
+    readonly PlaybackStatus playingIndicator = new PlaybackStatus();
+    readonly Stopwatch playingClock = new Stopwatch();
     DetectionCatalog.Entry[] remoteCatalog;
     readonly MinutesSelector minutes = new MinutesSelector(), editMinutes = new MinutesSelector();
     readonly CheckBox repeat = new RepeatSwitch();
@@ -79,12 +87,13 @@ sealed class Launcher : Form
         backgroundMode.CheckedChanged += delegate { SaveAppSettings(); ActivityMessages.SetBackground(active, backgroundMode.Checked); };
         shell.Controls.Add(header);
         var nowCard = new Card { Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 8), Margin = Padding.Empty };
-        var now = Grid(2, 1);
-        now.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); now.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74));
+        var now = Grid(3, 1);
+        now.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); now.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 158)); now.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74));
         var nowText = Grid(1, 2); Rows(nowText, 24, -1);
         activity.Text = "Ready to play"; activity.Font = new Font(Font, FontStyle.Bold); activity.Dock = DockStyle.Fill; activity.AutoEllipsis = true;
         remaining.Dock = DockStyle.Fill; remaining.ForeColor = muted; remaining.Text = "Choose a game or start your playlist.";
         nowText.Controls.Add(activity); nowText.Controls.Add(remaining); now.Controls.Add(nowText);
+        playingIndicator.Dock = DockStyle.Fill; playingIndicator.Visible = false; now.Controls.Add(playingIndicator, 1, 0);
         timerEnabled.Text = ""; timerEnabled.AccessibleName = "Enable countdown timer"; hints.SetToolTip(timerEnabled, "Enable or pause the countdown timer"); timerEnabled.Dock = DockStyle.Fill; timerEnabled.Checked = false;
         timerEnabled.CheckedChanged += delegate {
             SaveAppSettings();
@@ -92,7 +101,7 @@ sealed class Launcher : Form
             if (timerEnabled.Checked) clock.Start(); else clock.Stop();
             UpdateCountdown();
         };
-        stopButton = Button("Stop", delegate { StopAll("Stopped."); }, false); stopButton.Enabled = false; now.Controls.Add(stopButton);
+        stopButton = Button("Stop", delegate { StopAll("Stopped."); }, false); stopButton.Enabled = false; now.Controls.Add(stopButton, 2, 0);
         nowCard.Controls.Add(now); shell.Controls.Add(nowCard);
         var nav = Grid(3, 1); nav.Margin = new Padding(0, 5, 0, 4);
         for (int i = 0; i < 3; i++) {
@@ -106,7 +115,14 @@ sealed class Launcher : Form
         shell.Controls.Add(status);
         var library = Page("Library"); var lib = Grid(1, 4); Rows(lib, 24, 36, -1, 40); library.Controls.Add(lib);
         libraryCount.Dock = DockStyle.Fill; libraryCount.ForeColor = Theme.Text; libraryCount.Font = new Font(Font, FontStyle.Bold);
-        lib.Controls.Add(libraryCount); lib.Controls.Add(InputSurface(search)); search.AccessibleName = "Search games";
+        lib.Controls.Add(libraryCount);
+        var librarySearchRow = Grid(2, 1); librarySearchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); librarySearchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+        librarySearchRow.Controls.Add(InputSurface(search));
+        librarySort.Dock = DockStyle.Fill; librarySort.AccessibleName = "Sort library";
+        librarySort.Items.AddRange(new object[] { "Date: newest first", "Date: oldest first", "Name: A to Z", "Name: Z to A" }); librarySort.SelectedIndex = 0;
+        librarySort.SelectedIndexChanged += delegate { Filter(); };
+        hints.SetToolTip(librarySort, "Sort by name or the date a game was added to your library");
+        librarySearchRow.Controls.Add(librarySort); lib.Controls.Add(librarySearchRow); search.AccessibleName = "Search games";
         search.HandleCreated += delegate { Theme.SearchHint(search); };
         StyleList(games, false); games.SelectionMode = SelectionMode.MultiExtended; lib.Controls.Add(new BufferedListPanel(games));
         ((DarkList)games).RowActions = true;
@@ -182,18 +198,36 @@ sealed class Launcher : Form
         playback.Controls.Add(Button("Start playlist", delegate { StartPlaylist(); }, true)); pl.Controls.Add(playback);
         queue.SelectedIndexChanged += delegate { var item = queue.SelectedItem as PlaylistItem; if (item != null) editMinutes.Value = item.Minutes; removePlaylistButton.Enabled = queue.SelectedIndices.Count > 0; };
 
-        var addPage = Page("Add games"); var fields = Grid(1, 5); Rows(fields, 36, 24, -1, 36, 36); addPage.Controls.Add(fields);
-        var findRow = Grid(2, 1);
-        findRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); findRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
+        var addPage = Page("Add games"); var fields = Grid(1, 6); Rows(fields, 36, 32, 24, -1, 36, 36); addPage.Controls.Add(fields);
+        var findRow = Grid(3, 1);
+        findRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); findRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170)); findRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
         catalogSearch.AccessibleName = "Search Discord game catalog";
         catalogSearch.HandleCreated += delegate { Theme.SearchHint(catalogSearch); };
         findRow.Controls.Add(InputSurface(catalogSearch));
-        refreshButton = Button("Refresh Game Catalogue", delegate { RefreshCatalog(); }, false); findRow.Controls.Add(refreshButton); fields.Controls.Add(findRow);
+        refreshButton = Button("Refresh Game Catalogue", delegate { RefreshCatalog(); }, false); findRow.Controls.Add(refreshButton);
+        browseCatalogButton = Button("All games", delegate { playableCatalogOnly.Checked = false; catalogSearch.Clear(); FilterCatalogGames(); }, false); findRow.Controls.Add(browseCatalogButton); fields.Controls.Add(findRow);
+        hints.SetToolTip(browseCatalogButton, "Browse the entire saved catalogue, including games without Windows executables");
+        var sortRow = Grid(3, 1); sortRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180)); sortRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); sortRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 134));
+        catalogSort.Dock = DockStyle.Fill;
+        catalogSort.AccessibleName = "Sort catalogue"; catalogSort.Items.AddRange(new object[] { "Date: newest first", "Date: oldest first", "Name: A to Z", "Name: Z to A" }); catalogSort.SelectedIndex = 0;
+        hints.SetToolTip(catalogSort, "Date first seen by this app, rather than the game's release date. Older caches may have unknown dates.");
+        newCatalogOnly.Text = "New since last refresh"; newCatalogOnly.Dock = DockStyle.Fill;
+        hints.SetToolTip(newCatalogOnly, "Show the latest batch of newly discovered games. Refreshes with no additions keep the previous batch. The first download establishes a baseline.");
+        playableCatalogOnly.Text = "Playable only"; playableCatalogOnly.Dock = DockStyle.Fill; playableCatalogOnly.Checked = true;
+        playableCatalogOnly.CheckedChanged += delegate {
+            FilterCatalogGames();
+        };
+        hints.SetToolTip(playableCatalogOnly, "Show only catalogue games with a supported Windows executable. Turn off to show all games.");
+        sortRow.Controls.Add(catalogSort); sortRow.Controls.Add(newCatalogOnly); sortRow.Controls.Add(playableCatalogOnly); fields.Controls.Add(sortRow);
+        catalogSort.SelectedIndexChanged += delegate { FilterCatalogGames(); };
+        newCatalogOnly.CheckedChanged += delegate { FilterCatalogGames(); };
         var catalogHeading = Grid(2, 1); catalogHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); catalogHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 154));
         catalogInfo.Text = "Type a game name to search."; catalogInfo.Dock = DockStyle.Fill; catalogInfo.ForeColor = muted; catalogInfo.AutoEllipsis = true; catalogHeading.Controls.Add(catalogInfo);
         lastUpdated.ForeColor = muted; lastUpdated.Font = new Font("Segoe UI", 7.5f); lastUpdated.TextAlign = ContentAlignment.MiddleRight; lastUpdated.AutoEllipsis = true; lastUpdated.Dock = DockStyle.Fill; catalogHeading.Controls.Add(lastUpdated); fields.Controls.Add(catalogHeading);
         StyleList(catalogResults, false); catalogResults.SelectionMode = SelectionMode.MultiExtended; fields.Controls.Add(new BufferedListPanel(catalogResults));
-        ((DarkList)catalogResults).HasRowInfo = index => string.IsNullOrEmpty(((PlaylistItem)catalogResults.Items[index]).Path);
+        showAllCatalogButton = Button("Show all", delegate { FilterCatalogGames(true); }, false); showAllCatalogButton.Dock = DockStyle.None; showAllCatalogButton.Visible = false;
+        hints.SetToolTip(showAllCatalogButton, "Load all remaining matches while keeping the current search, sorting and filters");
+        ((DarkList)catalogResults).HasRowInfo = index => catalogResults.Items[index] is PlaylistItem && string.IsNullOrEmpty(((PlaylistItem)catalogResults.Items[index]).Path);
         ((DarkList)catalogResults).RowInfo += delegate(int index) {
             using (var dialog = new DarkInformationDialog(((PlaylistItem)catalogResults.Items[index]).Name)) dialog.ShowDialog(this);
         };
@@ -201,7 +235,7 @@ sealed class Launcher : Form
         addGamesButton = Button("Add selected games", delegate { AddCatalogGames(); }, true); addGamesButton.Enabled = false; addActions.Controls.Add(addGamesButton);
         addAllPlaylistButton = Button("Add EVERYTHING to playlist", AddAllCatalogToPlaylist, false); addActions.Controls.Add(addAllPlaylistButton); fields.Controls.Add(addActions);
         hints.SetToolTip(addAllPlaylistButton, "Add the entire supported catalogue directly to Playlist, with 5s per new game. Skips duplicates and games without executable paths. Library stays unchanged.");
-        catalogResults.SelectedIndexChanged += delegate { addGamesButton.Enabled = catalogResults.SelectedItems.Cast<PlaylistItem>().Any(x => !string.IsNullOrEmpty(x.Path)); };
+        catalogResults.SelectedIndexChanged += delegate { addGamesButton.Enabled = catalogResults.SelectedItems.OfType<PlaylistItem>().Any(x => !string.IsNullOrEmpty(x.Path)); };
         catalogResults.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.Control && e.KeyCode == Keys.A) { ((DarkList)catalogResults).SelectAllItems(); e.SuppressKeyPress = true; } };
         catalogSearch.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { if (remoteCatalog != null) FilterCatalogGames(); e.SuppressKeyPress = true; } };
         catalogSearch.TextChanged += delegate { if (remoteCatalog != null) FilterCatalogGames(); else catalogInfo.Text = "Refresh the catalogue to search."; };
@@ -285,6 +319,10 @@ sealed class Launcher : Form
     {
         for (int i = 0; i < pages.Count; i++) { pages[i].Visible = i == index; navigation[i].Selected = i == index; navigation[i].Invalidate(); }
         pages[index].BringToFront();
+        if (index == 2) {
+            if (!playableCatalogOnly.Checked) playableCatalogOnly.Checked = true;
+            else FilterCatalogGames();
+        }
     }
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Theme.Window(this); }
 
@@ -311,15 +349,22 @@ sealed class Launcher : Form
             if (e.Index < 0) return;
             Color rowColor = ((DarkList)list).RowBackColor(e.Index, (e.State & DrawItemState.Selected) != 0);
             using (var brush = new SolidBrush(rowColor)) e.Graphics.FillRectangle(brush, e.Bounds);
-            var item = (PlaylistItem)list.Items[e.Index];
+            var item = list.Items[e.Index] as PlaylistItem;
+            if (item == null) return;
             int inset = durations ? 104 : list == games ? 92 : list == catalogResults && string.IsNullOrEmpty(item.Path) ? 52 : 16;
             TextRenderer.DrawText(e.Graphics, (durations ? (e.Index + 1) + ".  " : "") + item.Name, Font, new Rectangle(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - inset, durations ? e.Bounds.Height : 23), ForeColor, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-            if (!durations) TextRenderer.DrawText(e.Graphics, string.IsNullOrEmpty(item.Path) ? "No supported Windows executable" : list == catalogResults ? (catalog.Any(x => x.Name.Equals(item.Name, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(x.Path)) ? "Already in library  /  " : "Ready to add  /  ") + item.Path : "Added " + item.DateAdded + "  /  " + item.Path, Font, new Rectangle(e.Bounds.X + 8, e.Bounds.Y + 23, e.Bounds.Width - inset, 19), muted, TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            if (!durations) TextRenderer.DrawText(e.Graphics, list == catalogResults ? CatalogDescription(item) : "Added " + item.DateAdded + "  /  " + item.Path, Font, new Rectangle(e.Bounds.X + 8, e.Bounds.Y + 23, e.Bounds.Width - inset, 19), muted, TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
             if (durations) TextRenderer.DrawText(e.Graphics, MinutesSelector.Format(item.Minutes), Font, new Rectangle(e.Bounds.Right - 90, e.Bounds.Y, 80, e.Bounds.Height), muted, TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
             if ((e.State & DrawItemState.Focus) != 0) e.DrawFocusRectangle();
         };
     }
     void Notice(string message) { status.ForeColor = muted; status.Text = message; }
+    string CatalogDescription(PlaylistItem item)
+    {
+        string date = CatalogDate(item) == DateTime.MinValue ? "Date unknown" : "First seen " + item.DateAdded;
+        string availability = string.IsNullOrEmpty(item.Path) ? "No supported Windows executable" : catalog.Any(x => SameGame(x, item)) ? "In library" : "Ready to add";
+        return (libraryStore.IsNew(item) ? "NEW  /  " : "") + date + "  /  " + availability + (string.IsNullOrEmpty(item.Path) ? "" : "  /  " + item.Path);
+    }
     void Error(string message) { status.ForeColor = Color.FromArgb(255, 159, 163); status.Text = message; }
     void Validate(PlaylistItem item)
     {
@@ -345,6 +390,7 @@ sealed class Launcher : Form
     void UpdateCatalogDate()
     {
         addAllPlaylistButton.Enabled = remoteCatalog != null && remoteCatalog.Length > 0;
+        browseCatalogButton.Enabled = addAllPlaylistButton.Enabled;
         lastUpdated.Text = libraryStore.UpdatedUtc.HasValue ? "Updated " + libraryStore.UpdatedUtc.Value.ToLocalTime().ToString("dd MMM, HH:mm") : "Not refreshed yet";
     }
     async void RefreshCatalog()
@@ -356,7 +402,7 @@ sealed class Launcher : Form
             await System.Threading.Tasks.Task.Run(() => libraryStore.Refresh());
             if (IsDisposed || Disposing) return;
             remoteCatalog = libraryStore.Entries; RebuildLibrary(); Filter(); FilterCatalogGames(); UpdateCatalogDate();
-            Notice("Catalog refreshed: " + remoteCatalog.Length.ToString("N0") + " games available offline in Add games.");
+            Notice(libraryStore.LastRefreshNewCount > 0 ? "Catalogue refreshed: " + libraryStore.LastRefreshNewCount.ToString("N0") + " newly added games. Use All games to browse." : "Catalogue refreshed. No new games found." + (libraryStore.NewCount > 0 ? " Previous new-games list kept." : ""));
         } catch (Exception e) { if (!IsDisposed && !Disposing) Error("Refresh failed; saved games remain available. " + e.Message); }
         finally { if (!refreshButton.IsDisposed) { refreshButton.Enabled = true; refreshButton.Text = "Refresh Game Catalogue"; } }
     }
@@ -456,9 +502,13 @@ sealed class Launcher : Form
     void Filter()
     {
         var match = libraryStore.Matcher(search.Text);
-        var visible = catalog.Where(match).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        var selected = new HashSet<PlaylistItem>(games.SelectedItems.Cast<PlaylistItem>());
+        var visible = SortGames(catalog.Where(match), librarySort.SelectedIndex).ToArray();
         ((DarkList)games).ResetHover(); games.BeginUpdate();
-        try { games.Items.Clear(); games.Items.AddRange(visible); } finally { games.EndUpdate(); }
+        try {
+            games.Items.Clear(); games.Items.AddRange(visible);
+            for (int i = 0; i < visible.Length; i++) if (selected.Contains(visible[i])) games.SetSelected(i, true);
+        } finally { games.EndUpdate(); }
         libraryCount.Text = "Game library" + " / " + visible.Length.ToString("N0") + (search.Text.Length > 0 ? " matches" : " games");
     }
     void RefreshQueue(params int[] selections)
@@ -549,18 +599,45 @@ sealed class Launcher : Form
             libraryStore.SetHidden(selected, true); RebuildLibrary(); Filter(); Notice("Removed " + selected.Length + " games from the library.");
         } catch (Exception e) { Error("Could not remove games: " + e.Message); }
     }
-    void FilterCatalogGames()
+    void FilterCatalogGames(bool expand = false)
     {
         if (remoteCatalog == null) return;
-        var results = DetectionCatalog.Search(remoteCatalog, catalogSearch.Text);
+        bool all = string.IsNullOrWhiteSpace(catalogSearch.Text);
+        IEnumerable<PlaylistItem> matches = all ? DetectionCatalog.AllEntries(remoteCatalog) : DetectionCatalog.Search(remoteCatalog, catalogSearch.Text);
+        if (newCatalogOnly.Checked) matches = matches.Where(libraryStore.IsNew);
+        if (playableCatalogOnly.Checked) matches = matches.Where(x => !string.IsNullOrEmpty(x.Path));
+        var results = SortGames(matches, catalogSort.SelectedIndex).ToArray();
+        int count = expand ? results.Length : Math.Min(10, results.Length);
+        int hidden = results.Length - count;
+        showAllCatalogButton.Text = "Show all (" + hidden.ToString("N0") + " more)";
+        int previousTop = expand ? catalogResults.TopIndex : 0;
+        var selection = new HashSet<string>(catalogResults.SelectedItems.OfType<PlaylistItem>().Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
         ((DarkList)catalogResults).ResetHover(); catalogResults.BeginUpdate(); catalogResults.Items.Clear();
-        foreach (var item in results.Take(200)) catalogResults.Items.Add(item);
-        catalogResults.EndUpdate(); addGamesButton.Enabled = false;
-        catalogInfo.Text = results.Length == 0 ? (string.IsNullOrWhiteSpace(catalogSearch.Text) ? "Type a game name to search." : "No matches. Try the full title or fewer words.") : results.Length > 200 ? "Showing 200 of " + results.Length + " matches. Narrow your search." : results.Length + " matches / Ctrl or Shift to select several";
+        foreach (var item in results.Take(count)) catalogResults.Items.Add(item);
+        ((DarkList)catalogResults).SetScrollFooter(showAllCatalogButton, hidden > 0);
+        if (expand) {
+            for (int i = 0; i < count; i++) if (selection.Contains(results[i].Name)) catalogResults.SetSelected(i, true);
+            if (count > 0) catalogResults.TopIndex = Math.Min(previousTop, count - 1);
+        }
+        catalogResults.EndUpdate();
+        addGamesButton.Enabled = catalogResults.SelectedItems.OfType<PlaylistItem>().Any(x => !string.IsNullOrEmpty(x.Path));
+        catalogInfo.Text = results.Length == 0 ? (playableCatalogOnly.Checked ? "No playable games match." : newCatalogOnly.Checked ? "No new games match." : all ? "Catalogue is empty." : string.IsNullOrWhiteSpace(catalogSearch.Text) ? "Search or click All games." : "No matches. Try fewer words.") : (hidden > 0 ? "Showing " + count + " of " : "") + results.Length.ToString("N0") + (newCatalogOnly.Checked ? " new games" : all ? " catalogue games" : " matches");
+    }
+    static DateTime CatalogDate(PlaylistItem item)
+    {
+        DateTime date;
+        return DateTime.TryParseExact(item.DateAdded, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out date) ? date : DateTime.MinValue;
+    }
+    static IEnumerable<PlaylistItem> SortGames(IEnumerable<PlaylistItem> items, int order)
+    {
+        if (order == 1) return items.OrderBy(x => CatalogDate(x) == DateTime.MinValue).ThenBy(CatalogDate).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
+        if (order == 2) return items.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
+        if (order == 3) return items.OrderByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase);
+        return items.OrderByDescending(CatalogDate).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
     }
     void AddCatalogGames()
     {
-        var selected = catalogResults.SelectedItems.Cast<PlaylistItem>().Where(x => !string.IsNullOrEmpty(x.Path)).ToArray();
+        var selected = catalogResults.SelectedItems.OfType<PlaylistItem>().Where(x => !string.IsNullOrEmpty(x.Path)).ToArray();
         if (selected.Length == 0) { Error("Select supported games first."); return; }
         try {
             int restored = 0, added = 0;
@@ -658,10 +735,10 @@ sealed class Launcher : Form
     }
     bool StopProcess()
     {
-        if (active == null) { clock.Reset(); return true; }
+        if (active == null) { clock.Reset(); playingClock.Reset(); UpdatePlayingIndicator(); return true; }
         try {
             if (!active.HasExited) { active.Kill(); if (!active.WaitForExit(3000)) throw new Exception("The previous process has not stopped yet."); }
-            active.Dispose(); active = null; clock.Reset(); return true;
+            active.Dispose(); active = null; clock.Reset(); playingClock.Reset(); UpdatePlayingIndicator(); return true;
         } catch (Exception e) { Error("Could not stop: " + e.Message); return false; }
     }
     void EnsureGameExecutable(string target)
@@ -688,6 +765,7 @@ sealed class Launcher : Form
             EnsureGameExecutable(target);
             using (var self = Process.GetCurrentProcess()) active = Process.Start(new ProcessStartInfo(target, "--placeholder " + self.Id + " " + self.StartTime.ToUniversalTime().Ticks + " \"" + item.Name + "\"" + (backgroundMode.Checked ? " background" : "")) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(target) });
             activeMinutes = run != null && runTiming.RandomPlay ? Sample(runTiming.PlayMin, runTiming.PlayMax) : item.Minutes; clock.Restart(); if (!CountdownEnabled) clock.Stop();
+            playingClock.Restart(); UpdatePlayingIndicator();
             activity.Text = item.Name; stopButton.Enabled = true; return true;
         } catch (Exception e) { Error("Could not start: " + e.Message); return false; }
     }
@@ -758,6 +836,7 @@ sealed class Launcher : Form
     { return ((int)time.TotalHours).ToString("00") + time.ToString(@"\:mm\:ss"); }
     void UpdateCountdown()
     {
+        UpdatePlayingIndicator();
         if (inPause) {
             TimeSpan pauseLeft = TimeSpan.FromMinutes((double)pauseMinutes) - clock.Elapsed;
             remaining.Text = Duration(TimeSpan.FromSeconds(Math.Max(0, Math.Ceiling(pauseLeft.TotalSeconds)))) + " pause / Next: " + run.Current.Name; return;
@@ -776,5 +855,11 @@ sealed class Launcher : Form
             popup = "Time remaining  " + countdown;
         }
         ActivityMessages.Send(active, Handle, popup);
+    }
+    void UpdatePlayingIndicator()
+    {
+        playingIndicator.Visible = active != null && !inPause;
+        string elapsed = Duration(playingClock.Elapsed);
+        if (playingIndicator.Text != elapsed) playingIndicator.Text = elapsed;
     }
 }
